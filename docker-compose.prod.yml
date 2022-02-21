@@ -1,0 +1,26 @@
+version: "3.8"
+
+services:
+  notifier:
+    container_name: rideau-canal-skateway-notifier
+    image: ghcr.io/gordonpn/rideau-canal-skateway-notifier:stable
+    user: 1001:1001
+    restart: unless-stopped
+    environment:
+      - GID=1001
+      - UID=1001
+    deploy:
+      replicas: 1
+      update_config:
+        parallelism: 1
+        order: stop-first
+        failure_action: rollback
+        delay: 10s
+      rollback_config:
+        parallelism: 0
+        order: stop-first
+      restart_policy:
+        condition: any
+        delay: 60s
+        max_attempts: 5
+        window: 120s

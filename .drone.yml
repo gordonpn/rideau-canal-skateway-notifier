@@ -1,0 +1,80 @@
+---
+kind: pipeline
+type: docker
+name: notification
+
+platform:
+  os: linux
+  arch: arm64
+
+trigger:
+  event: [push, pull_request]
+
+steps:
+  - name: slack before
+    image: plugins/slack:linux-arm64
+    failure: ignore
+    settings:
+      channel: drone-ci
+      template: >
+        {{ uppercasefirst build.event }} on branch {{ build.branch }} from repo {{repo.name}}
+        Request to deploy build #{{build.number}}
+        <{{ build.link }}|Visit build page ➡️>
+      webhook:
+        from_secret: DRONE_SLACK_WEBHOOK_URL
+
+---
+kind: pipeline
+type: docker
+name: deploy
+
+platform:
+  os: linux
+  arch: arm64
+
+trigger:
+  event:
+    - promote
+  target:
+    - production
+
+node:
+  swarm-role: manager
+
+steps:
+  - name: deploy prod
+    image: linuxserver/docker-compose:version-1.29.2
+    environment:
+      SLACK_WEBHOOK_URL:
+        from_secret: SLACK_WEBHOOK_URL
+    volumes:
+      - name: dockersock
+        path: /var/run/docker.sock
+    commands:
+      - docker-compose -f /drone/src/docker-compose.yml -f /drone/src/docker-compose.prod.yml config > /drone/src/docker-compose.processed.yml
+      - docker stack deploy -c /drone/src/docker-compose.processed.yml rideau-canal-skateway-notifier
+  - name: slack notification
+    image: plugins/slack:linux-arm64
+    when:
+      status:
+        - failure
+        - success
+    failure: ignore
+    settings:
+      channel: drone-ci
+      webhook:
+        from_secret: DRONE_SLACK_WEBHOOK_URL
+      template: >
+        {{#if build.pull }}
+          *{{#success build.status}}✔{{ else }}✘{{/success}} {{ uppercasefirst build.status }}*: <https://github.com/{{ repo.owner }}/{{ repo.name }}/pull/{{ build.pull }}|Pull Request #{{ build.pull }}>
+        {{else}}
+          *{{#success build.status}}✔{{ else }}✘{{/success}} {{ uppercasefirst build.status }}: Build #{{ build.number }}* (type: `{{ build.event }}`)
+        {{/if}}
+        Commit: <https://github.com/{{ repo.owner }}/{{ repo.name }}/commit/{{ build.commit }}|{{ truncate build.commit 8 }}>
+        Branch: <https://github.com/{{ repo.owner }}/{{ repo.name }}/commits/{{ build.branch }}|{{ build.branch }}>
+        Author: {{ build.author }}
+        <{{ build.link }}|Visit build page ➡️>
+volumes:
+  - name: dockersock
+    host:
+      path: /var/run/docker.sock

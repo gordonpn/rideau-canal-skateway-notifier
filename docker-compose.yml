@@ -1,0 +1,7 @@
+version: "3.8"
+
+services:
+  notifier:
+    init: true
+    environment:
+      - SLACK_WEBHOOK_URL
